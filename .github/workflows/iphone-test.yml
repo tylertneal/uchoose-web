@@ -2,7 +2,12 @@ name: iPhone test
 
 # Opens the live site in WebKit (Safari's engine) at iPhone size with a test
 # location and real restaurant data, and saves screenshots of every screen.
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "live = the GitHub Pages site, local = this commit served on the runner"
+        default: live
 
 jobs:
   test:
@@ -14,7 +19,12 @@ jobs:
           node-version: "22"
       - run: npm i --no-save playwright@1.49
       - run: npx playwright install --with-deps webkit
+      - name: Serve this commit locally
+        if: inputs.target == 'local'
+        run: python3 -m http.server 8080 >/dev/null 2>&1 &
       - run: node tests/iphone.js
+        env:
+          SITE_URL: ${{ inputs.target == 'local' && 'http://localhost:8080/' || '' }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
