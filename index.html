@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>uChoose</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="description" content="Can't decide where to eat? Spin the wheel and let uChoose pick a place near you.">
+  <meta name="theme-color" content="#161616">
+
+  <!-- Home-screen app on iPhone -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="uChoose">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="app">
+
+    <!-- Home -->
+    <section id="home" class="screen">
+      <header class="brand">
+        <h1>uChoose</h1>
+        <p class="tagline">Where shall we dine?</p>
+        <div class="rule"></div>
+      </header>
+
+      <nav id="categories" class="categories" aria-label="Categories"></nav>
+
+      <p id="location-help" class="help" hidden>
+        uChoose needs your location to find places nearby. On iPhone: Settings → Privacy &amp; Security →
+        Location Services → Safari Websites → While Using. Then try again.
+      </p>
+
+      <button id="hidden-link" class="text-link" hidden></button>
+
+      <div class="radius">
+        <div class="radius-label">WITHIN</div>
+        <div id="radius-options" class="radius-options" role="radiogroup" aria-label="Distance"></div>
+      </div>
+    </section>
+
+    <!-- Wheel -->
+    <section id="wheel" class="screen" hidden>
+      <button class="back text-link" data-action="home">‹&nbsp; Back</button>
+      <div class="wheel-head">
+        <div id="wheel-category" class="label"></div>
+        <h2>Let fate decide</h2>
+      </div>
+
+      <div id="wheel-loading" class="status">
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="wheel-status">Finding your location…</p>
+      </div>
+
+      <div id="wheel-error" class="status" hidden>
+        <p id="wheel-error-text"></p>
+        <button id="retry" class="outline-button">TRY AGAIN</button>
+      </div>
+
+      <div id="wheel-ready" hidden>
+        <div class="wheel-wrap" id="wheel-wrap">
+          <canvas id="wheel-canvas" aria-label="Restaurant wheel"></canvas>
+          <div class="pointer" aria-hidden="true"></div>
+          <button id="spin" class="spin">SPIN</button>
+        </div>
+        <p id="wheel-count" class="muted small"></p>
+        <p class="muted tiny">Press and hold a name to hide it</p>
+      </div>
+
+      <p class="credit">Restaurant data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</p>
+    </section>
+
+    <!-- Result -->
+    <section id="result" class="screen center" hidden>
+      <div class="label" id="result-label"></div>
+      <h2 id="result-name" class="result-name"></h2>
+      <div class="rule"></div>
+      <p id="result-cuisine" class="muted"></p>
+      <p id="result-address" class="muted"></p>
+      <p id="result-distance" class="muted"></p>
+      <div class="result-actions">
+        <a id="directions" class="outline-button gold" target="_blank" rel="noopener">GET DIRECTIONS</a>
+        <button class="outline-button" data-action="spin-again">SPIN AGAIN</button>
+        <button class="text-link" data-action="home">Home</button>
+        <button class="text-link faint" data-action="hide-result">Don't show this place again</button>
+      </div>
+    </section>
+
+    <!-- Hidden places -->
+    <section id="hidden" class="screen" hidden>
+      <button class="back text-link" data-action="home">‹&nbsp; Back</button>
+      <div class="wheel-head">
+        <div class="label">HIDDEN PLACES</div>
+        <p class="muted">These never appear on your wheel, at any location.</p>
+      </div>
+      <ul id="hidden-list" class="hidden-list"></ul>
+      <p id="hidden-empty" class="muted center-text" hidden>Nothing hidden.</p>
+      <button id="restore-all" class="outline-button">RESTORE ALL</button>
+    </section>
+  </main>
+
+  <!-- Hide confirmation -->
+  <div id="dialog" class="dialog-backdrop" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <h3 id="dialog-title">Hide this place?</h3>
+      <p id="dialog-text"></p>
+      <div class="dialog-actions">
+        <button class="text-link" id="dialog-cancel">CANCEL</button>
+        <button class="text-link gold" id="dialog-confirm">HIDE</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

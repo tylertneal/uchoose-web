@@ -1,0 +1,22 @@
+name: iPhone test
+
+# Opens the live site in WebKit (Safari's engine) at iPhone size with a test
+# location and real restaurant data, and saves screenshots of every screen.
+on: workflow_dispatch
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm i --no-save playwright@1.49
+      - run: npx playwright install --with-deps webkit
+      - run: node tests/iphone.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: iphone-screenshots
+          path: test-results
