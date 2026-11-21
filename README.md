@@ -54,7 +54,7 @@ Prices, ratings and photos aren't included. "Fine Dining" is a best guess based 
 
 ## Privacy
 
-Your location is only used to search for places near you. The app sends the search area to Nominatim and nothing else: no account, tracking or ads.
+When you choose a category, the app sends Nominatim a search area centered on a 0.01° grid (about 1 km north to south). Your browser uses its location reading to calculate exact distances and apply the selected radius. Opening the app or changing the radius on the home screen does not send a search. There are no accounts, tracking or ads.
 
 ---
 
@@ -73,7 +73,7 @@ Plain HTML, CSS and JavaScript with no build step, hosted on GitHub Pages.
 | `manifest.webmanifest`, `icons/` | Home-screen app name and icon |
 | `sw.js` | Keeps the app's files on the phone so it opens instantly |
 
-When you change app files, bump `VERSION` in `sw.js` so phones pick up the update.
+When you change app files, bump `VERSION` in `sw.js` and the `app.js` URL version in both `index.html` and `sw.js` so phones pick up the update.
 
 The **iPhone test** workflow opens the live site in Safari's engine (WebKit) at iPhone size, with a test location, and saves screenshots of every screen.
 
