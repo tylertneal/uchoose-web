@@ -7,7 +7,12 @@ on:
     inputs:
       target:
         description: "live = the GitHub Pages site, local = this commit served on the runner"
+        type: choice
+        options: [live, local]
         default: live
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -15,6 +20,8 @@ jobs:
     container: mcr.microsoft.com/playwright:v1.49.0-noble
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: npm i --no-save playwright@1.49.0
       - name: Serve this commit locally
         if: inputs.target == 'local'
@@ -22,7 +29,7 @@ jobs:
       - run: node tests/iphone.js
         env:
           HOME: /root
-          SITE_URL: ${{ inputs.target == 'local' && 'http://localhost:8080/' || '' }}
+          SITE_URL: ${{ inputs.target == 'local' && 'http://127.0.0.1:8080/' || '' }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -86,11 +86,15 @@ if (!RADIUS_OPTIONS.includes(radiusMiles)) radiusMiles = 5;
 
 /** "McDonald's", "McDonalds" and "Mcdonald’s" all become "mcdonalds". */
 function nameKey(name) {
-  return name.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]/g, "");
+  const normalized = name.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase().replace(/&/g, "and");
+  return normalized.replace(/[^a-z0-9]/g, "") || normalized || name.normalize("NFC");
 }
 
+const savedHidden = store.get("hidden", []);
 const Hidden = {
-  list: store.get("hidden", []),
+  list: Array.isArray(savedHidden)
+    ? savedHidden.filter((p) => typeof p?.id === "string" && p.id && typeof p?.name === "string")
+    : [],
   ids() { return new Set(this.list.map((p) => p.id)); },
   keysOf(r) { return [nameKey(r.name), r.brand ? nameKey(r.brand) : ""].filter(Boolean); },
   isHidden(r, ids = this.ids()) { return this.keysOf(r).some((k) => ids.has(k)); },
@@ -126,13 +130,6 @@ function getLocation() {
   });
 }
 
-async function locationAlreadyAllowed() {
-  try {
-    const status = await navigator.permissions.query({ name: "geolocation" });
-    return status.state === "granted";
-  } catch { return false; }
-}
-
 // ---------------------------------------------------------------------------
 // Restaurant data (Nominatim)
 // ---------------------------------------------------------------------------
@@ -152,11 +149,13 @@ function rateLimited(fn) {
   return run;
 }
 
+const EARTH_RADIUS_METERS = 6371000;
+
 function distanceMeters(lat1, lon1, lat2, lon2) {
-  const R = 6371000, rad = Math.PI / 180;
+  const rad = Math.PI / 180;
   const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return EARTH_RADIUS_METERS * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 const KIND_BY_TYPE = {
@@ -164,22 +163,28 @@ const KIND_BY_TYPE = {
   ice_cream: "dessert", bakery: "dessert", pastry: "dessert", confectionery: "dessert",
 };
 
+const mapText = (value) => typeof value === "string" ? value.trim() : "";
+
 function parsePlaces(json, here) {
+  if (!Array.isArray(json)) throw new Error("Invalid restaurant response");
   const out = [], ids = [];
   for (const el of json) {
-    if (el.place_id) ids.push(el.place_id);
-    const kind = KIND_BY_TYPE[el.type];
-    if (!kind || !el.name) continue;
-    const lat = parseFloat(el.lat), lon = parseFloat(el.lon);
-    if (!isFinite(lat) || !isFinite(lon)) continue;
+    if (!el) continue;
+    if (Number.isSafeInteger(el.place_id) && el.place_id > 0) ids.push(el.place_id);
+    if (typeof el.type !== "string" || !Object.hasOwn(KIND_BY_TYPE, el.type)) continue;
+    const name = mapText(el.name);
+    if (!name) continue;
+    const lat = typeof el.lat === "number" ? el.lat : parseFloat(mapText(el.lat));
+    const lon = typeof el.lon === "number" ? el.lon : parseFloat(mapText(el.lon));
+    if (!Number.isFinite(lat) || Math.abs(lat) > 90 || !Number.isFinite(lon) || Math.abs(lon) > 180) continue;
     const a = el.address || {};
-    const street = [a.house_number, a.road].filter(Boolean).join(" ");
-    const city = a.city || a.town || a.village || a.suburb || "";
+    const street = [a.house_number, a.road].map(mapText).filter(Boolean).join(" ");
+    const city = [a.city, a.town, a.village, a.suburb].map(mapText).find(Boolean);
     const extra = el.extratags || {};
     out.push({
-      name: el.name.trim(), lat, lon, kind,
-      cuisine: extra.cuisine || null,
-      brand: extra.brand || null,
+      name, lat, lon, kind: KIND_BY_TYPE[el.type],
+      cuisine: mapText(extra.cuisine) || null,
+      brand: mapText(extra.brand) || null,
       address: [street, city].filter(Boolean).join(", ") || null,
       distance: distanceMeters(here.lat, here.lon, lat, lon),
     });
@@ -187,30 +192,48 @@ function parsePlaces(json, here) {
   return { places: out, ids };
 }
 
+function searchViewboxes(here, radius) {
+  // Snap the search center to a 0.01° grid. Add half a cell to cover the
+  // rounding offset, and use the actual position only for local distance checks.
+  const lat = Math.round(here.lat * 100) / 100;
+  const lon = Math.round(here.lon * 100) / 100;
+  const radiusDegrees = radius / EARTH_RADIUS_METERS * 180 / Math.PI;
+  const dLat = radiusDegrees + 0.005;
+  const north = Math.min(90, lat + dLat);
+  const south = Math.max(-90, lat - dLat);
+  const edge = Math.max(Math.abs(north), Math.abs(south));
+  const dLon = radiusDegrees / Math.cos(edge * Math.PI / 180) + 0.005;
+  const box = (west, east) => [west, north, east, south].join(",");
+  if (dLon >= 180) return [box(-180, 180)];
+  const west = lon - dLon, east = lon + dLon;
+  if (west < -180) return [box(west + 360, 180), box(-180, east)];
+  if (east > 180) return [box(west, 180), box(-180, east - 360)];
+  return [box(west, east)];
+}
+
 async function search(q, here, radius, pages) {
-  const dLat = radius / 111320;
-  const dLon = radius / (111320 * Math.cos(here.lat * Math.PI / 180));
-  const viewbox = [here.lon - dLon, here.lat + dLat, here.lon + dLon, here.lat - dLat].join(",");
   const results = [], seen = [];
-  for (let page = 0; page < pages; page++) {
-    const params = new URLSearchParams({
-      q, viewbox, bounded: "1", limit: "40", format: "jsonv2", addressdetails: "1", extratags: "1",
-      "accept-language": "en",
-    });
-    if (seen.length) params.set("exclude_place_ids", seen.join(","));
-    const json = await rateLimited(async () => {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 12000);
-      try {
-        const res = await fetch(NOMINATIM + "?" + params, { signal: ctrl.signal });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        return await res.json();
-      } finally { clearTimeout(timer); }
-    });
-    const { places, ids } = parsePlaces(json, here);
-    results.push(...places);
-    seen.push(...ids);
-    if (ids.length < 40) break;
+  for (const viewbox of searchViewboxes(here, radius)) {
+    for (let page = 0; page < pages; page++) {
+      const params = new URLSearchParams({
+        q, viewbox, bounded: "1", limit: "40", format: "jsonv2", addressdetails: "1", extratags: "1",
+        "accept-language": "en",
+      });
+      if (seen.length) params.set("exclude_place_ids", seen.join(","));
+      const json = await rateLimited(async () => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 12000);
+        try {
+          const res = await fetch(NOMINATIM + "?" + params, { signal: ctrl.signal });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return await res.json();
+        } finally { clearTimeout(timer); }
+      });
+      const { places, ids } = parsePlaces(json, here);
+      results.push(...places);
+      seen.push(...ids);
+      if (ids.length < 40) break;
+    }
   }
   return results;
 }
@@ -266,16 +289,6 @@ async function findPlaces(categoryId, here, radius) {
 
 const radiusMeters = () => Math.round(radiusMiles * 1609.344);
 
-async function prefetch() {
-  if (!(await locationAlreadyAllowed())) return;
-  try {
-    const here = await getLocation();
-    const r = radiusMeters();
-    await quiet(base(here, r));
-    await quiet(cafes(here, r));
-  } catch { /* ignore; the wheel screen will show errors */ }
-}
-
 // ---------------------------------------------------------------------------
 // Screens
 // ---------------------------------------------------------------------------
@@ -329,7 +342,6 @@ function renderHome() {
       radiusMiles = m;
       store.set("radius", m);
       renderHome();
-      prefetch();
     });
     opts.appendChild(b);
   }
@@ -662,7 +674,6 @@ document.addEventListener("click", (e) => {
 
 history.replaceState({ screen: "home" }, "");
 show({ screen: "home" }, false);
-prefetch();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
